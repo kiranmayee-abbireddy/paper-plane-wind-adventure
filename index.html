@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Paper Plane Wind Adventure</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div id="game-container">
+        <canvas id="gameCanvas"></canvas>
+        
+        <!-- Start Screen -->
+        <div id="start-screen" class="screen">
+            <h1>Paper Plane Wind Adventure</h1>
+            <button id="start-btn">Play Game</button>
+            <button id="instructions-btn">Instructions</button>
+        </div>
+
+        <!-- Game UI -->
+        <div id="game-ui" class="hidden">
+            <div id="score">Score: <span id="score-value">0</span></div>
+            <div id="wind-meter">Wind Power: <span id="wind-value">0</span></div>
+            <button id="pause-btn">Pause</button>
+        </div>
+
+        <!-- Game Over Screen -->
+        <div id="game-over" class="screen hidden">
+            <h2>Game Over</h2>
+            <p>Final Score: <span id="final-score">0</span></p>
+            <button id="restart-btn">Play Again</button>
+        </div>
+    </div>
+
+    <script src="game.js"></script>
+</body>
+</html> 
