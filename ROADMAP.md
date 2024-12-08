@@ -1,23 +1,25 @@
 # Paper Plane Wind Adventure - Development Roadmap
 
 ## Core Mechanics
-- [ ] Wind Control System
-  - [ ] Mouse/touch input for wind generation
-  - [ ] Wind gust visualization (particles/arrows)
-  - [ ] Wind strength and direction calculations
+- [±] Wind Control System
+  - [x] Mouse/touch input for wind generation
+  - [x] Wind gust visualization (particles/arrows)
+  - [x] Wind strength calculations
   - [ ] Wind interference patterns
 
-- [ ] Paper Plane Physics
-  - [ ] Gravity simulation
-  - [ ] Friction and speed reduction
-  - [ ] Screen boundary management
+- [±] Paper Plane Physics
+  - [±] Gravity simulation (needs tuning)
+  - [±] Friction and speed reduction (needs refinement)
+  - [x] Screen boundary management
   - [ ] Collision detection
-  - [ ] Realistic plane motion
+  - [±] Realistic plane motion (needs improvement)
 
-- [ ] Obstacle System
-  - [ ] Static obstacles (buildings, trees)
-  - [ ] Moving obstacles (birds)
-  - [ ] Special effect obstacles (speed reducers, repulsors)
+## Visual Effects
+- [x] Wind particles
+  - [x] Basic circular particles
+  - [x] Directional streamers
+  - [x] Gradient-based wind lines
+  - [ ] Particle interaction with obstacles
 
 ## Power-ups and Collectibles
 - [ ] Speed Boost Implementation
@@ -70,14 +72,9 @@
 - [ ] Final challenge design
 
 ## UI Elements
-- [ ] Start Screen
-  - [ ] Play button
-  - [ ] Settings menu
-  - [ ] Instructions panel
-
-- [ ] In-Game HUD
+- [±] In-Game HUD
   - [ ] Score tracker
-  - [ ] Wind strength gauge
+  - [x] Wind strength gauge
   - [ ] Pause functionality
 
 - [ ] Game Over Screen
