@@ -1,6 +1,18 @@
 class Game {
     constructor() {
         this.canvas = document.getElementById('gameCanvas');
+        
+        // Initialize boundaries first
+        this.boundaries = {
+            bottom: 0,  // Will be set in setupCanvas
+            left: 0,
+            right: 0,   // Will be set in setupCanvas
+            groundSpeed: 8
+        };
+        
+        // Set up responsive canvas size
+        this.setupCanvas();
+        
         this.ctx = this.canvas.getContext('2d');
         this.plane = {
             x: 100,
@@ -48,14 +60,6 @@ class Game {
         this.gameState = 'intro'; // 'intro', 'playing', 'completed', or 'gameOver'
         this.showInstructions = true;
         this.instructionsFadeOut = 0;
-        
-        // Add boundaries for game over condition
-        this.boundaries = {
-            bottom: 550, // Ground level
-            left: 0,    // Changed from -50 to make boundaries tighter
-            right: this.canvas.width,
-            groundSpeed: 8  // Reduced from 15 to make crashes more frequent
-        };
         
         // Add crash state and animation properties
         this.crash = {
@@ -106,6 +110,127 @@ class Game {
         
         // Add click handler for restart button
         this.canvas.addEventListener('click', this.handleClick.bind(this));
+        
+        // Add touch handling
+        this.touchStartPos = null;
+        this.setupMobileControls();
+        
+        // Add window resize handler
+        window.addEventListener('resize', this.handleResize.bind(this));
+    }
+
+    setupCanvas() {
+        // 16:9 aspect ratio dimensions
+        const baseWidth = 1280;  // Standard 16:9 width
+        const baseHeight = 720;  // Standard 16:9 height
+        
+        // Get current viewport size
+        const viewportWidth = window.innerWidth;
+        const viewportHeight = window.innerHeight;
+        
+        // Calculate scale factor maintaining 16:9
+        const scale = Math.min(
+            viewportWidth / baseWidth,
+            viewportHeight / baseHeight
+        );
+        
+        // Set canvas size
+        this.canvas.width = baseWidth;
+        this.canvas.height = baseHeight;
+        
+        // Set canvas style size for scaling
+        this.canvas.style.width = `${baseWidth * scale}px`;
+        this.canvas.style.height = `${baseHeight * scale}px`;
+        
+        // Store scale factor for input calculations
+        this.scale = scale;
+        
+        // Update ground level and other position-dependent values
+        this.boundaries.bottom = baseHeight - 50; // Ground level
+        this.boundaries.right = baseWidth;
+    }
+
+    handleResize() {
+        this.setupCanvas();
+    }
+
+    setupMobileControls() {
+        // Touch start handler
+        this.canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            const touch = e.touches[0];
+            this.touchStartPos = this.getScaledPosition(touch);
+        });
+
+        // Touch move handler
+        this.canvas.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            if (this.touchStartPos && this.gameState === 'playing') {
+                const touch = e.touches[0];
+                const currentPos = this.getScaledPosition(touch);
+                
+                // Calculate wind based on touch movement
+                const dx = currentPos.x - this.touchStartPos.x;
+                const dy = currentPos.y - this.touchStartPos.y;
+                
+                // Update wind strength based on touch movement
+                this.wind.x = (dx / 50) * this.wind.strength;
+                this.wind.y = (dy / 50) * this.wind.strength;
+            }
+        });
+
+        // Touch end handler
+        this.canvas.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            this.wind.x = 0;
+            this.wind.y = 0;
+            this.touchStartPos = null;
+        });
+
+        // Touch cancel handler
+        this.canvas.addEventListener('touchcancel', (e) => {
+            e.preventDefault();
+            this.wind.x = 0;
+            this.wind.y = 0;
+            this.touchStartPos = null;
+        });
+    }
+
+    getScaledPosition(touch) {
+        const rect = this.canvas.getBoundingClientRect();
+        return {
+            x: (touch.clientX - rect.left) / this.scale,
+            y: (touch.clientY - rect.top) / this.scale
+        };
+    }
+
+    handleClick(e) {
+        // Update click handler for scaled canvas
+        const rect = this.canvas.getBoundingClientRect();
+        const scaleX = this.canvas.width / rect.width;
+        const scaleY = this.canvas.height / rect.height;
+        
+        const clickX = (e.clientX - rect.left) * scaleX;
+        const clickY = (e.clientY - rect.top) * scaleY;
+
+        if (this.gameState === 'gameOver' || 
+            (this.gameState === 'completed' && this.currentLevel === this.maxLevels)) {
+            // Check if click is within restart button bounds
+            if (clickX >= this.restartButton.x && 
+                clickX <= this.restartButton.x + this.restartButton.width &&
+                clickY >= this.restartButton.y && 
+                clickY <= this.restartButton.y + this.restartButton.height) {
+                this.restart();
+            }
+        } else if (this.gameState === 'playing') {
+            // Existing click handling for wind gust
+            const dx = clickX - this.plane.x;
+            const dy = clickY - this.plane.y;
+            const length = Math.sqrt(dx * dx + dy * dy);
+            
+            this.plane.velocity.x += (dx / length) * 5;
+            this.plane.velocity.y += (dy / length) * 5;
+        }
     }
 
     setupControls() {
@@ -543,11 +668,17 @@ class Game {
             // Instructions
             this.ctx.font = '24px Arial';
             const instructions = [
-                'Use arrow keys to control the wind',
-                'Click anywhere to create a wind gust',
+                window.innerWidth > 800 ? 
+                    'Use arrow keys to control the wind' :
+                    'Swipe to control the wind',
+                window.innerWidth > 800 ?
+                    'Click anywhere to create a wind gust' :
+                    'Tap anywhere to create a wind gust',
                 'Collect all stars and reach the goal!',
                 '',
-                'Press any key or click to start'
+                window.innerWidth > 800 ?
+                    'Press any key or click to start' :
+                    'Tap to start'
             ];
             
             instructions.forEach((text, i) => {
@@ -1480,31 +1611,6 @@ class Game {
             currentGlow: 20,
             completed: false
         };
-    }
-
-    handleClick(e) {
-        const rect = this.canvas.getBoundingClientRect();
-        const clickX = e.clientX - rect.left;
-        const clickY = e.clientY - rect.top;
-
-        if (this.gameState === 'gameOver' || 
-            (this.gameState === 'completed' && this.currentLevel === this.maxLevels)) {
-            // Check if click is within restart button bounds
-            if (clickX >= this.restartButton.x && 
-                clickX <= this.restartButton.x + this.restartButton.width &&
-                clickY >= this.restartButton.y && 
-                clickY <= this.restartButton.y + this.restartButton.height) {
-                this.restart();
-            }
-        } else if (this.gameState === 'playing') {
-            // Existing click handling for wind gust
-            const dx = clickX - this.plane.x;
-            const dy = clickY - this.plane.y;
-            const length = Math.sqrt(dx * dx + dy * dy);
-            
-            this.plane.velocity.x += (dx / length) * 5;
-            this.plane.velocity.y += (dy / length) * 5;
-        }
     }
 
     restart() {
