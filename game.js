@@ -779,9 +779,9 @@ class Game {
         this.ctx.fillStyle = 'lightblue';
         this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
-        // Draw ground
+        // Draw ground - Update position for 16:9 (720p) canvas
         this.ctx.fillStyle = 'green';
-        this.ctx.fillRect(0, 550, this.canvas.width, 50);
+        this.ctx.fillRect(0, this.canvas.height - 50, this.canvas.width, 50);
 
         // Draw stars
         this.drawStars();
