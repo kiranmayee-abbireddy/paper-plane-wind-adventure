@@ -1,5 +1,16 @@
 class Game {
     constructor() {
+        // Initialize intro plane first
+        this.introPlane = {
+            angle: 0,          // Current angle in radians
+            radius: 150,       // Radius of circular path
+            speed: 0.02,       // Angular velocity
+            wobble: 0,         // Wobble effect phase
+            trail: [],         // Array to store trail positions
+            x: 0,             // Current x position
+            y: 0              // Current y position
+        };
+
         this.canvas = document.getElementById('gameCanvas');
         
         // Initialize boundaries first
@@ -8,6 +19,21 @@ class Game {
             left: 0,
             right: 0,   // Will be set in setupCanvas
             groundSpeed: 8
+        };
+        
+        // Add background elements before canvas setup
+        this.clouds = Array(10).fill(null).map(() => ({
+            x: Math.random() * this.canvas.width,
+            y: Math.random() * (this.canvas.height * 0.6),
+            width: 80 + Math.random() * 120,
+            speed: 0.2 + Math.random() * 0.3,
+            opacity: 0.5 + Math.random() * 0.4
+        }));
+        
+        // Ground perspective points - moved lower
+        this.groundVanishingPoint = {
+            x: this.canvas.width / 2,
+            y: this.canvas.height * 4.25  // Changed from 0.65 to 0.8
         };
         
         // Set up responsive canvas size
@@ -28,11 +54,20 @@ class Game {
             strength: 0.5
         };
         
-        // Add score and stars
+        // Add player name tracking
+        this.playerName = localStorage.getItem('paperPlaneName') || this.askPlayerName();
+        
+        // Add high score tracking with player names
+        this.highScore = parseInt(localStorage.getItem('paperPlaneHighScore')) || 0;
+        this.highScoreHolder = localStorage.getItem('paperPlaneHighScoreHolder') || this.playerName;
+        
+        // Modify score object to track level scores
         this.score = {
             current: 0,
-            total: 300, // 100 points per star
-            display: 0  // For score animation
+            total: 300,     // Per level total (100 points per star)
+            display: 0,     // For score animation
+            levelStart: 0,  // Score at the start of current level
+            highest: this.highScore
         };
         this.stars = [
             { x: 300, y: 150, collected: false },
@@ -77,6 +112,7 @@ class Game {
         this.maxLevels = 30;
         this.levelTransitioning = false;
         this.transitionAlpha = 0;
+        this.levelCompleteShown = true;
         
         // Add wind effect zones
         this.windZones = [];
@@ -119,6 +155,161 @@ class Game {
         window.addEventListener('resize', this.handleResize.bind(this));
     }
 
+    themes = [
+        // Daytime themes
+        {
+            name: 'Morning Dawn',
+            sky: ['#FF7F50', '#87CEEB', '#E0FFFF'],
+            ground: ['#90EE90', '#228B22', '#006400']
+        },
+        {
+            name: 'Sunny Day',
+            sky: ['#1e90ff', '#87ceeb', '#b0e2ff'],
+            ground: ['#7AB55C', '#5C8A42', '#3F6D29']
+        },
+        {
+            name: 'Desert Noon',
+            sky: ['#00BFFF', '#87CEEB', '#F0F8FF'],
+            ground: ['#DEB887', '#D2691E', '#8B4513']
+        },
+        {
+            name: 'Tropical Paradise',
+            sky: ['#40E0D0', '#48D1CC', '#AFEEEE'],
+            ground: ['#98FB98', '#3CB371', '#2E8B57']
+        },
+        {
+            name: 'Autumn Evening',
+            sky: ['#FF8C00', '#FFA500', '#FFD700'],
+            ground: ['#DAA520', '#CD853F', '#8B4513']
+        },
+        {
+            name: 'Purple Sunset',
+            sky: ['#4B0082', '#8A2BE2', '#9370DB'],
+            ground: ['#556B2F', '#2F4F4F', '#1A332F']
+        },
+        {
+            name: 'Golden Hour',
+            sky: ['#FF4500', '#FF8C00', '#FFD700'],
+            ground: ['#228B22', '#006400', '#004225']
+        },
+        {
+            name: 'Starry Night',
+            sky: ['#191970', '#000080', '#00008B'],
+            ground: ['#3A5F0B', '#2F4F4F', '#1A332F']
+        },
+        {
+            name: 'Northern Lights',
+            sky: ['#4B0082', '#00FF7F', '#00FFFF'],
+            ground: ['#191970', '#000080', '#00008B']
+        },
+        {
+            name: 'Moonlit Valley',
+            sky: ['#483D8B', '#4169E1', '#1E90FF'],
+            ground: ['#2F4F4F', '#2E8B57', '#006400']
+        },
+        // Fantasy themes
+        {
+            name: 'Candy Land',
+            sky: ['#FF69B4', '#FFB6C1', '#FFC0CB'],  // Pink variations
+            ground: ['#98FB98', '#90EE90', '#3CB371']  // Mint greens
+        },
+        {
+            name: 'Alien World',
+            sky: ['#8A2BE2', '#9932CC', '#9370DB'],  // Purple hues
+            ground: ['#00FA9A', '#00FF7F', '#98FB98']  // Neon greens
+        },
+        {
+            name: 'Volcanic',
+            sky: ['#000000', '#333333', '#666666'],
+            ground: ['#8B4513', '#CD853F', '#DAA520']
+        },
+        {
+            name: 'Arctic',
+            sky: ['#FFFFFF', '#ADD8E6', '#87CEEB'],
+            ground: ['#FFFFFF', '#E0FFFF', '#B0E0E6']
+        },
+        {
+            name: 'Ocean',
+            sky: ['#000080', '#0000CD', '#0000FF'],
+            ground: ['#00FFFF', '#20B2AA', '#008080']
+        },
+        {
+            name: 'Forest',
+            sky: ['#008000', '#228B22', '#2E8B57'],
+            ground: ['#32CD32', '#006400', '#004225']
+        },
+        {
+            name: 'Mountain',
+            sky: ['#808080', '#A9A9A9', '#D3D3D3'],
+            ground: ['#FFFFFF', '#F5F5F5', '#DCDCDC']
+        },
+        {
+            name: 'Desert Storm',
+            sky: ['#FFD700', '#FFA500', '#FF8C00'],
+            ground: ['#DEB887', '#D2691E', '#8B4513']
+        },
+        {
+            name: 'Jungle',
+            sky: ['#32CD32', '#228B22', '#006400'],
+            ground: ['#98FB98', '#3CB371', '#2E8B57']
+        },
+        {
+            name: 'Misty Morning',
+            sky: ['#F0F0F0', '#D3D3D3', '#C0C0C0'],
+            ground: ['#98FB98', '#90EE90', '#3CB371']
+        },
+        {
+            name: 'Rainy Day',
+            sky: ['#87CEEB', '#4682B4', '#1E90FF'],
+            ground: ['#708090', '#696969', '#483D8B']
+        },
+        {
+            name: 'Cherry Blossom',
+            sky: ['#FFC0CB', '#FFB6C1', '#FF69B4'],
+            ground: ['#FFFFFF', '#FFFACD', '#FAFAD2']
+        },
+        {
+            name: 'Autumn Forest',
+            sky: ['#FFA500', '#FF8C00', '#FF4500'],
+            ground: ['#D2691E', '#8B4513', '#A0522D']
+        },
+        {
+            name: 'Winter Wonderland',
+            sky: ['#ADD8E6', '#87CEEB', '#00BFFF'],
+            ground: ['#FFFFFF', '#F0FFF0', '#F0FFFF']
+        },
+        {
+            name: 'Sunset Beach',
+            sky: ['#FFA07A', '#FF7F50', '#FF6347'],
+            ground: ['#FFDAB9', '#FFE4B5', '#FFDEAD']
+        },
+        {
+            name: 'Spring Meadow',
+            sky: ['#98FB98', '#90EE90', '#3CB371'],
+            ground: ['#FFFACD', '#FAFAD2', '#FFEFD5']
+        },
+        {
+            name: 'Twilight',
+            sky: ['#800080', '#9400D3', '#8A2BE2'],
+            ground: ['#4B0082', '#6A5ACD', '#7B68EE']
+        },
+        {
+            name: 'Crystal Cave',
+            sky: ['#FF00FF', '#EE82EE', '#DA70D6'],
+            ground: ['#9370DB', '#8A2BE2', '#800080']
+        },
+        {
+            name: 'Rainbow Valley',
+            sky: ['#FF0000', '#FF7F00', '#FFFF00'],
+            ground: ['#00FF00', '#0000FF', '#4B0082']
+        },
+        {
+            name: 'Storm Clouds',
+            sky: ['#483D8B', '#696969', '#708090'],
+            ground: ['#2F4F4F', '#000000', '#191970']
+        }
+    ];
+
     setupCanvas() {
         // 16:9 aspect ratio dimensions
         const baseWidth = 1280;  // Standard 16:9 width
@@ -152,6 +343,20 @@ class Game {
 
     handleResize() {
         this.setupCanvas();
+        
+        // Update ground vanishing point
+        this.groundVanishingPoint = {
+            x: this.canvas.width / 2,
+            y: this.canvas.height * 3.25  // Changed from 0.65 to 0.8
+        };
+        
+        // Update cloud positions to fit new canvas size
+        this.clouds.forEach(cloud => {
+            cloud.y = Math.random() * (this.canvas.height * 0.6);
+            if (cloud.x > this.canvas.width) {
+                cloud.x = -cloud.width;
+            }
+        });
     }
 
     setupMobileControls() {
@@ -159,7 +364,28 @@ class Game {
         this.canvas.addEventListener('touchstart', (e) => {
             e.preventDefault();
             const touch = e.touches[0];
-            this.touchStartPos = this.getScaledPosition(touch);
+            const pos = this.getScaledPosition(touch);
+            
+            // If game is in intro state, start the game
+            if (this.gameState === 'intro') {
+                this.startGame();
+                return;
+            }
+            
+            // Store initial touch position and time for swipe detection
+            this.touchStartPos = pos;
+            this.touchStartTime = Date.now();
+            
+            // Add tap-to-boost functionality
+            if (this.gameState === 'playing') {
+                const dx = pos.x - this.plane.x;
+                const dy = pos.y - this.plane.y;
+                const length = Math.sqrt(dx * dx + dy * dy);
+                
+                // Apply smaller boost on tap compared to click
+                this.plane.velocity.x += (dx / length) * 3;
+                this.plane.velocity.y += (dy / length) * 3;
+            }
         });
 
         // Touch move handler
@@ -169,22 +395,56 @@ class Game {
                 const touch = e.touches[0];
                 const currentPos = this.getScaledPosition(touch);
                 
-                // Calculate wind based on touch movement
+                // Calculate swipe distance and direction
                 const dx = currentPos.x - this.touchStartPos.x;
                 const dy = currentPos.y - this.touchStartPos.y;
                 
-                // Update wind strength based on touch movement
-                this.wind.x = (dx / 50) * this.wind.strength;
-                this.wind.y = (dy / 50) * this.wind.strength;
+                // Make wind control more responsive on mobile
+                const sensitivity = 0.05; // Reduced from 0.02 for better mobile control
+                this.wind.x = dx * sensitivity;
+                this.wind.y = dy * sensitivity;
+                
+                // Add resistance to prevent extreme wind values
+                const maxWind = 2;
+                this.wind.x = Math.max(-maxWind, Math.min(maxWind, this.wind.x));
+                this.wind.y = Math.max(-maxWind, Math.min(maxWind, this.wind.y));
             }
         });
 
         // Touch end handler
         this.canvas.addEventListener('touchend', (e) => {
             e.preventDefault();
-            this.wind.x = 0;
-            this.wind.y = 0;
+            
+            // Handle button taps in game over state
+            if (this.gameState === 'gameOver' || 
+                (this.gameState === 'completed' && this.currentLevel === this.maxLevels)) {
+                const touch = e.changedTouches[0];
+                const pos = this.getScaledPosition(touch);
+                
+                if (pos.x >= this.restartButton.x && 
+                    pos.x <= this.restartButton.x + this.restartButton.width &&
+                    pos.y >= this.restartButton.y && 
+                    pos.y <= this.restartButton.y + this.restartButton.height) {
+                    this.restart();
+                }
+            }
+            
+            // Gradually reduce wind when touch ends
+            const windReduction = () => {
+                this.wind.x *= 0.8;
+                this.wind.y *= 0.8;
+                
+                if (Math.abs(this.wind.x) > 0.01 || Math.abs(this.wind.y) > 0.01) {
+                    requestAnimationFrame(windReduction);
+                } else {
+                    this.wind.x = 0;
+                    this.wind.y = 0;
+                }
+            };
+            windReduction();
+            
             this.touchStartPos = null;
+            this.touchStartTime = null;
         });
 
         // Touch cancel handler
@@ -193,6 +453,7 @@ class Game {
             this.wind.x = 0;
             this.wind.y = 0;
             this.touchStartPos = null;
+            this.touchStartTime = null;
         });
     }
 
@@ -386,12 +647,19 @@ class Game {
             }
         }
 
-        // Animate score display
+        // Animate score display with high score consideration
         if (this.score.display < this.score.current) {
             this.score.display = Math.min(
                 this.score.display + 5,
                 this.score.current
             );
+            
+            // Update high score in real-time if current score exceeds it
+            if (this.score.current > this.score.highest) {
+                this.score.highest = this.score.current;
+                localStorage.setItem('paperPlaneHighScore', this.score.highest);
+                localStorage.setItem('paperPlaneHighScoreHolder', this.playerName);
+            }
         }
 
         // Handle level completion
@@ -431,6 +699,9 @@ class Game {
                 zone.force.y = Math.sin(angle) * zone.force.y;
             }
         });
+        
+        // Update wave animation
+        this.time += 0.02; // Adjust this value to change wave animation speed
     }
 
     startGame = () => {
@@ -488,22 +759,49 @@ class Game {
     }
 
     drawScore() {
-        // Progress bar background
+        // Score board background
         this.ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
-        this.ctx.fillRect(20, 20, 200, 30);
+        this.ctx.fillRect(20, 20, this.canvas.width - 40, 40);
+        
+        // Only draw time board if there's a time limit
+        if (this.timeLimit) {
+            this.ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+            this.ctx.fillRect(20, 65, this.canvas.width - 40, 30);
+        }
         
         // Progress bar fill
-        const progress = (this.score.display / this.score.total) * 200;
+        const levelProgress = ((this.score.current - this.score.levelStart) / this.score.total) * 200;
         this.ctx.fillStyle = 'gold';
-        this.ctx.fillRect(20, 20, progress, 30);
+        this.ctx.fillRect(20, 20, levelProgress, 40);
         
         // Score text
         this.ctx.font = 'bold 20px Arial';
         this.ctx.fillStyle = 'white';
         this.ctx.textAlign = 'left';
-        this.ctx.fillText(`Score: ${this.score.display}/${this.score.total}`, 
-            30, 42
-        );
+        this.ctx.fillText(`Score: ${this.score.display}`, 30, 47);
+        
+        // Player name in center
+        this.ctx.textAlign = 'center';
+        this.ctx.fillText(this.playerName, this.canvas.width / 2, 47);
+        
+        // High score with holder name
+        this.ctx.textAlign = 'right';
+        const highScoreText = `Best: ${this.score.highest} (${this.highScoreHolder})`;
+        this.ctx.fillStyle = this.score.current > this.score.highest ? '#FFD700' : 'white';
+        this.ctx.fillText(highScoreText, this.canvas.width - 30, 47);
+        
+        // Only show time if there's a time limit
+        if (this.timeLimit) {
+            this.ctx.textAlign = 'center';
+            const remaining = Math.max(0, this.timeLimit - this.levelTime);
+            const remainingMinutes = Math.floor(remaining / 60);
+            const remainingSeconds = Math.floor(remaining % 60);
+            const remainingText = `${remainingMinutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+            
+            // Change color to red if time is running low
+            this.ctx.fillStyle = remaining < 10 ? '#FF4444' : 'white';
+            this.ctx.fillText(`Time: ${remainingText}`, this.canvas.width / 2, 85);
+        }
     }
 
     drawWindIndicator() {
@@ -613,43 +911,8 @@ class Game {
         this.ctx.restore();
     }
 
-    drawLevelComplete() {
-        if (this.gameState === 'completed') {
-            // Create semi-transparent overlay
-            this.ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-            this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-            
-            // Draw completion message
-            this.ctx.font = 'bold 48px Arial';
-            this.ctx.textAlign = 'center';
-            this.ctx.textBaseline = 'middle';
-            
-            // Draw text shadow
-            this.ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-            this.ctx.fillText('Level Complete!', 
-                this.canvas.width/2 + 2, 
-                this.canvas.height/2 + 2
-            );
-            
-            // Draw main text
-            this.ctx.fillStyle = 'gold';
-            this.ctx.fillText('Level Complete!', 
-                this.canvas.width/2, 
-                this.canvas.height/2
-            );
-            
-            // Draw score
-            this.ctx.font = 'bold 24px Arial';
-            this.ctx.fillStyle = 'white';
-            this.ctx.fillText(`Final Score: ${this.score.display}`, 
-                this.canvas.width/2, 
-                this.canvas.height/2 + 50
-            );
-        }
-    }
-
     drawInstructions() {
-        if (this.gameState === 'intro') {
+        if (this.gameState === 'intro' && this.introPlane) {  // Add safety check
             // Full opacity intro screen
             this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
             this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
@@ -657,13 +920,128 @@ class Game {
             this.ctx.textAlign = 'center';
             this.ctx.textBaseline = 'middle';
             
-            // Title
-            this.ctx.font = 'bold 48px Arial';
-            this.ctx.fillStyle = 'white';
+            // Title with textured gradient
+            this.ctx.save();
+
+            // Before drawing the title text, update the font
+            // Use Bangers font for main title
+            this.ctx.font = 'bold 72px "Bangers", cursive';  // Increased size and changed font
+
+            // Create base gradient
+            const titleGradient = this.ctx.createLinearGradient(
+                this.canvas.width/2,
+                this.canvas.height/2 - 120,
+                this.canvas.width/2,
+                this.canvas.height/2 - 40
+            );
+
+            // Create metallic gradient colors with brighter tones
+            titleGradient.addColorStop(0, '#34e89e');    // Bright teal green
+            titleGradient.addColorStop(0.3, '#0f9b0f');  // Bright green
+            titleGradient.addColorStop(0.6, '#ff3e3e');  // Bright red
+            titleGradient.addColorStop(1, '#ff7b00');    // Bright orange
+
+            // Add letter spacing effect for Bangers font
+            this.ctx.letterSpacing = '5px';
+
+            // Draw outer black border
+            this.ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)';
+            this.ctx.lineWidth = 4;
+            this.ctx.strokeText('Paper Plane Adventure', 
+                this.canvas.width/2, 
+                this.canvas.height/2 - 80
+            );
+
+            // Create texture pattern
+            const patternCanvas = document.createElement('canvas');
+            const patternCtx = patternCanvas.getContext('2d');
+            const patternSize = 64;
+            patternCanvas.width = patternSize;
+            patternCanvas.height = patternSize;
+
+            // Draw noise pattern
+            patternCtx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+            for (let i = 0; i < 100; i++) {
+                const x = Math.random() * patternSize;
+                const y = Math.random() * patternSize;
+                const size = Math.random() * 2 + 1;
+                patternCtx.fillRect(x, y, size, size);
+            }
+
+            // Create pattern from the noise canvas
+            const pattern = this.ctx.createPattern(patternCanvas, 'repeat');
+
+            // Set composite operation for texture blend
+            this.ctx.globalCompositeOperation = 'source-over';
+
+            // Draw main text with gradient
+            this.ctx.fillStyle = titleGradient;
             this.ctx.fillText('Paper Plane Adventure', 
                 this.canvas.width/2, 
                 this.canvas.height/2 - 80
             );
+
+            // Apply texture overlay
+            this.ctx.globalCompositeOperation = 'overlay';
+            this.ctx.fillStyle = pattern;
+            this.ctx.fillText('Paper Plane Adventure', 
+                this.canvas.width/2, 
+                this.canvas.height/2 - 80
+            );
+
+            // Add metallic highlight
+            this.ctx.globalCompositeOperation = 'soft-light';
+            const highlightGradient = this.ctx.createLinearGradient(
+                this.canvas.width/2,
+                this.canvas.height/2 - 120,
+                this.canvas.width/2,
+                this.canvas.height/2 - 40
+            );
+            highlightGradient.addColorStop(0, 'rgba(255, 255, 255, 0.5)');    // Brighter highlight
+            highlightGradient.addColorStop(0.5, 'rgba(255, 255, 255, 0.15)'); // Subtle middle
+            highlightGradient.addColorStop(1, 'rgba(255, 255, 255, 0.3)');    // Medium bottom highlight
+
+            this.ctx.fillStyle = highlightGradient;
+            this.ctx.fillText('Paper Plane Adventure', 
+                this.canvas.width/2, 
+                this.canvas.height/2 - 80
+            );
+
+            // Reset composite operation
+            this.ctx.globalCompositeOperation = 'source-over';
+
+            // Add subtle inner shadow
+            this.ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
+            this.ctx.shadowBlur = 4;
+            this.ctx.shadowOffsetX = 2;
+            this.ctx.shadowOffsetY = 2;
+            this.ctx.strokeStyle = 'rgba(0, 0, 0, 0.2)';
+            this.ctx.lineWidth = 1;
+            this.ctx.strokeText('Paper Plane Adventure', 
+                this.canvas.width/2, 
+                this.canvas.height/2 - 80
+            );
+
+            this.ctx.restore();
+            
+            // Byline with subtle gradient
+            this.ctx.save();
+            const bylineGradient = this.ctx.createLinearGradient(
+                this.canvas.width/2 - 50,
+                this.canvas.height/2 - 40,
+                this.canvas.width/2 + 50,
+                this.canvas.height/2 - 40
+            );
+            bylineGradient.addColorStop(0, '#CCCCCC');
+            bylineGradient.addColorStop(1, '#FFFFFF');
+            
+            this.ctx.font = 'bold 28px "Press Start 2P", cursive';  // Pixel font for byline
+            this.ctx.fillStyle = bylineGradient;
+            this.ctx.fillText('by Kiryee', 
+                this.canvas.width/2, 
+                this.canvas.height/2 - 20  // Adjusted position
+            );
+            this.ctx.restore();
             
             // Instructions
             this.ctx.font = '24px Arial';
@@ -682,11 +1060,78 @@ class Game {
             ];
             
             instructions.forEach((text, i) => {
+                this.ctx.fillStyle = 'white';
                 this.ctx.fillText(text, 
                     this.canvas.width/2, 
-                    this.canvas.height/2 - 20 + (i * 30)
+                    this.canvas.height/2 + 20 + (i * 30)
                 );
             });
+            
+            // Update and draw animated plane
+            if (this.introPlane) {  // Add another safety check
+                this.introPlane.angle = (this.introPlane.angle + this.introPlane.speed) % (Math.PI * 2);
+                this.introPlane.wobble += 0.05;
+                
+                // Calculate infinity path position
+                const centerX = this.canvas.width/2;
+                const centerY = this.canvas.height/2 - 80; // Center around title
+                const a = 200; // Width of infinity
+                const b = 80;  // Height of infinity
+                
+                // Parametric equations for infinity symbol (lemniscate)
+                const t = this.introPlane.angle;
+                const x = centerX + a * Math.cos(t) / (1 + Math.sin(t) * Math.sin(t));
+                const y = centerY + b * Math.cos(t) * Math.sin(t) / (1 + Math.sin(t) * Math.sin(t));
+                
+                // Calculate rotation angle based on path direction
+                const dx = -a * (Math.sin(t) * (1 + Math.sin(t) * Math.sin(t)) + 2 * Math.cos(t) * Math.cos(t) * Math.sin(t)) / ((1 + Math.sin(t) * Math.sin(t)) * (1 + Math.sin(t) * Math.sin(t)));
+                const dy = b * (Math.cos(t) * Math.cos(t) - Math.sin(t) * Math.sin(t)) / ((1 + Math.sin(t) * Math.sin(t)) * (1 + Math.sin(t) * Math.sin(t)));
+                const rotation = Math.atan2(dy, dx);
+                
+                // Draw animated plane
+                this.ctx.save();
+                this.ctx.translate(x, y);
+                this.ctx.rotate(rotation);
+                
+                // Draw trail
+                this.ctx.beginPath();
+                this.ctx.moveTo(-40, 0);
+                for(let i = 1; i <= 5; i++) {
+                    const trailX = -40 - (i * 8);
+                    const alpha = 0.3 * (1 - i/5);
+                    this.ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
+                    this.ctx.fillRect(trailX, -1, 8, 2);
+                }
+                
+                // Draw plane matching the game plane design
+                this.ctx.beginPath();
+                this.ctx.moveTo(-40, 0);  // Tail
+                this.ctx.lineTo(40, 0);   // Top edge
+                this.ctx.lineTo(0, 30);   // Bottom point
+                this.ctx.lineTo(-5, 15);  // Tail detail
+                this.ctx.lineTo(-40, 0);  // Back to tail
+                
+                // Add wing detail
+                this.ctx.moveTo(-20, 5);
+                this.ctx.lineTo(0, 5);
+                
+                // Create gradient for plane
+                const planeGradient = this.ctx.createLinearGradient(-40, 0, 40, 30);
+                planeGradient.addColorStop(0, '#FFFFFF');
+                planeGradient.addColorStop(0.5, '#F0F0F0');
+                planeGradient.addColorStop(1, '#E0E0E0');
+                
+                this.ctx.fillStyle = planeGradient;
+                this.ctx.fill();
+                
+                // Add glow effect
+                this.ctx.shadowColor = 'rgba(255, 255, 255, 0.8)';
+                this.ctx.shadowBlur = 15;
+                this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+                this.ctx.stroke();
+                
+                this.ctx.restore();
+            }
         } else if (this.showInstructions) {
             // Fade out in-game instructions
             const alpha = Math.max(0, 1 - this.instructionsFadeOut);
@@ -775,27 +1220,23 @@ class Game {
         // Clear the canvas
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
-        // Draw sky
-        this.ctx.fillStyle = 'lightblue';
-        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        // Draw the new background
+        this.drawBackground();
 
-        // Draw ground - Update position for 16:9 (720p) canvas
-        this.ctx.fillStyle = 'green';
-        this.ctx.fillRect(0, this.canvas.height - 50, this.canvas.width, 50);
+        // Draw wind zones before obstacles
+        this.drawWindZones();
+
+        // Draw obstacles
+        this.drawObstacles();
 
         // Draw stars
         this.drawStars();
         
-        // Draw wind indicator
-        this.drawWindIndicator();
-
-        // Draw UI elements
-        this.drawScore();
-        this.drawInstructions();
-        this.drawGameOver();
-
         // Draw goal
         this.drawGoal();
+
+        // Draw wind effects
+        this.drawWindEffects();
         
         // Draw plane
         this.ctx.save();
@@ -820,42 +1261,57 @@ class Game {
         
         this.ctx.restore();
 
-        // Draw level complete overlay
-        this.drawLevelComplete();
-
         // Draw crash effect
         this.drawCrashEffect();
 
-        // Draw obstacles
-        this.drawObstacles();
+        // Draw UI elements on top
+        this.drawScore();
+        this.drawWindIndicator();
 
-        // Draw level transition
+        // Draw all overlays last
+        this.drawInstructions();  // Add this back
+        this.drawGameOver();      // Add this back
+        this.drawGameComplete();  // Add this back
+
+        // Draw level transition overlay if active
         if (this.levelTransitioning) {
-            this.ctx.fillStyle = `rgba(0, 0, 0, ${this.transitionAlpha})`;
+            // Use semi-transparent black overlay instead of blue gradient
+            this.ctx.fillStyle = `rgba(0, 0, 0, ${this.transitionAlpha * 0.5})`; // Reduced opacity to 0.5
             this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
             
             if (this.transitionAlpha >= 0.5) {
+                // Add glow effect to text
+                this.ctx.shadowColor = 'white';
+                this.ctx.shadowBlur = 20;
                 this.ctx.font = 'bold 48px Arial';
                 this.ctx.fillStyle = 'white';
                 this.ctx.textAlign = 'center';
-                this.ctx.fillText(`Level ${this.currentLevel}`, 
-                    this.canvas.width/2, 
-                    this.canvas.height/2
-                );
+                
+                if (this.levelCompleteShown) {
+                    // Show level complete message
+                    this.ctx.fillText('Level Complete!', 
+                        this.canvas.width/2, 
+                        this.canvas.height/2
+                    );
+                    
+                    // Show level score
+                    this.ctx.font = 'bold 24px Arial';
+                    this.ctx.shadowBlur = 10;
+                    this.ctx.fillText(`Score: ${this.score.display}`, 
+                        this.canvas.width/2, 
+                        this.canvas.height/2 + 50
+                    );
+                } else {
+                    // Show next level title
+                    this.ctx.fillText(`Level ${this.currentLevel}`, 
+                        this.canvas.width/2, 
+                        this.canvas.height/2
+                    );
+                }
+                // Reset shadow
+                this.ctx.shadowBlur = 0;
             }
         }
-
-        // Draw wind zones before obstacles
-        this.drawWindZones();
-
-        // Draw wind effects before plane
-        this.drawWindEffects();
-
-        // Draw timer if level has time limit
-        this.drawTimer();
-        
-        // Draw game complete screen
-        this.drawGameComplete();
     }
 
     gameLoop = () => {
@@ -886,6 +1342,14 @@ class Game {
             this.crash.active = true;
             this.crash.startTime = this.time;
             this.gameState = 'gameOver';
+            
+            // Update high score if current score is higher
+            if (this.score.current > this.score.highest) {
+                this.score.highest = this.score.current;
+                this.highScoreHolder = this.playerName;
+                localStorage.setItem('paperPlaneHighScore', this.score.highest);
+                localStorage.setItem('paperPlaneHighScoreHolder', this.highScoreHolder);
+            }
             
             // Create more particles for a better effect
             for (let i = 0; i < 30; i++) {
@@ -956,12 +1420,11 @@ class Game {
         this.wind.strength = levelConfig.windStrength;
         this.timeLimit = levelConfig.timeLimit;
         
-        // Reset score for this level
-        this.score = {
-            current: 0,
-            total: this.stars.length * 100,
-            display: 0
-        };
+        // Update score total for this level
+        this.score.total = levelConfig.stars.length * 100;
+        
+        // Don't reset the score, just update the display
+        this.score.display = this.score.current;
         
         // Initialize wind particles
         this.initWindParticles();
@@ -971,31 +1434,63 @@ class Game {
         if (this.currentLevel < this.maxLevels) {
             this.levelTransitioning = true;
             this.transitionAlpha = 0;
+            this.levelCompleteShown = true;
             
-            // Start transition animation
-            const transition = () => {
+            // Store the current score as the level start score
+            this.score.levelStart = this.score.current;
+            
+            // First show "Level Complete"
+            const showLevelComplete = () => {
                 this.transitionAlpha += 0.02;
                 if (this.transitionAlpha >= 1) {
-                    // Initialize next level
-                    this.currentLevel++;
-                    this.initLevel(this.currentLevel);
-                    
-                    // Start fade out
-                    const fadeOut = () => {
-                        this.transitionAlpha -= 0.02;
-                        if (this.transitionAlpha <= 0) {
-                            this.levelTransitioning = false;
-                            this.gameState = 'playing';
-                        } else {
-                            requestAnimationFrame(fadeOut);
-                        }
-                    };
-                    fadeOut();
+                    setTimeout(() => {
+                        // Start fading out level complete
+                        const fadeLevelComplete = () => {
+                            this.transitionAlpha -= 0.02;
+                            if (this.transitionAlpha <= 0) {
+                                // Now show next level title
+                                this.currentLevel++;
+                                this.levelCompleteShown = false;
+                                this.transitionAlpha = 0;
+                                
+                                // Initialize next level before showing its title
+                                this.initLevel(this.currentLevel);
+                                showNextLevel();
+                            } else {
+                                requestAnimationFrame(fadeLevelComplete);
+                            }
+                        };
+                        fadeLevelComplete();
+                    }, 1000); // Show "Level Complete" for 1 second
                 } else {
-                    requestAnimationFrame(transition);
+                    requestAnimationFrame(showLevelComplete);
                 }
             };
-            transition();
+
+            // Then show next level title
+            const showNextLevel = () => {
+                this.transitionAlpha += 0.02;
+                if (this.transitionAlpha >= 1) {
+                    setTimeout(() => {
+                        // Fade out and start playing
+                        const fadeOut = () => {
+                            this.transitionAlpha -= 0.02;
+                            if (this.transitionAlpha <= 0) {
+                                this.levelTransitioning = false;
+                                this.gameState = 'playing';
+                            } else {
+                                requestAnimationFrame(fadeOut);
+                            }
+                        };
+                        fadeOut();
+                    }, 1000); // Show next level title for 1 second
+                } else {
+                    requestAnimationFrame(showNextLevel);
+                }
+            };
+
+            // Start the transition sequence
+            showLevelComplete();
         }
     }
 
@@ -1399,7 +1894,9 @@ class Game {
             this.ctx.font = '24px Arial';
             this.ctx.fillStyle = 'white';
             const stats = [
-                `Total Score: ${this.score.display}`,
+                `Player: ${this.playerName}`,
+                `Final Score: ${this.score.display}`,
+                `High Score: ${this.score.highest} (${this.highScoreHolder})`,
                 `Time: ${this.totalTime.toFixed(1)} seconds`,
                 'All Levels Completed!'
             ];
@@ -1620,7 +2117,9 @@ class Game {
         this.score = {
             current: 0,
             total: 300,
-            display: 0
+            display: 0,
+            levelStart: 0,
+            highest: this.highScore
         };
         this.totalTime = 0;
         this.levelTime = 0;
@@ -1630,7 +2129,214 @@ class Game {
         // Initialize first level
         this.initLevel(1);
     }
-}
+
+    drawBackground() {
+        const theme = this.themes[(this.currentLevel - 1) % this.themes.length];
+        
+        // Draw sky gradient with theme colors
+        const skyGradient = this.ctx.createLinearGradient(0, 0, 0, this.canvas.height * 0.8);
+        skyGradient.addColorStop(0, theme.sky[0]);    // Top color
+        skyGradient.addColorStop(0.5, theme.sky[1]);  // Middle color
+        skyGradient.addColorStop(1, theme.sky[2]);    // Horizon color
+        
+        this.ctx.fillStyle = skyGradient;
+        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        
+        // Draw clouds
+        this.clouds.forEach(cloud => {
+            this.drawCloud(cloud);
+            
+            // Move clouds
+            cloud.x += cloud.speed;
+            if (cloud.x > this.canvas.width + cloud.width) {
+                cloud.x = -cloud.width;
+                cloud.y = Math.random() * (this.canvas.height * 0.6);
+            }
+        });
+        
+        // Draw ground with theme colors
+        this.drawPerspectiveGround(theme);
+    }
+
+    drawPerspectiveGround(theme) {
+        this.ctx.save();
+        
+        // Create base gradient for ground with sky blend
+        const groundGradient = this.ctx.createLinearGradient(
+            0, this.groundVanishingPoint.y - 100, // Start gradient above horizon
+            0, this.canvas.height
+        );
+        
+        // Add more color stops for smoother transition
+        groundGradient.addColorStop(0, theme.sky[2]);     // Start with sky color
+        groundGradient.addColorStop(0.1, theme.ground[0]); // Blend to ground color
+        groundGradient.addColorStop(0.4, theme.ground[1]); // Middle ground color
+        groundGradient.addColorStop(1, theme.ground[2]);   // Bottom ground color
+        
+        // Draw main ground with extended area for blending
+        this.ctx.beginPath();
+        this.ctx.moveTo(0, this.groundVanishingPoint.y - 100); // Start above horizon
+        this.ctx.lineTo(this.canvas.width, this.groundVanishingPoint.y - 100);
+        this.ctx.lineTo(this.canvas.width, this.canvas.height);
+        this.ctx.lineTo(0, this.canvas.height);
+        this.ctx.fillStyle = groundGradient;
+        this.ctx.fill();
+        
+        // Add a subtle atmospheric haze at the horizon
+        const hazeGradient = this.ctx.createLinearGradient(
+            0, this.groundVanishingPoint.y - 100,
+            0, this.groundVanishingPoint.y + 100
+        );
+        hazeGradient.addColorStop(0, `rgba(${hexToRgb(theme.sky[2])}, 0.6)`);
+        hazeGradient.addColorStop(1, `rgba(${hexToRgb(theme.sky[2])}, 0)`);
+        
+        this.ctx.fillStyle = hazeGradient;
+        this.ctx.fillRect(0, this.groundVanishingPoint.y - 100, 
+            this.canvas.width, 200);
+        
+        // Helper function to convert hex to rgb
+        function hexToRgb(hex) {
+            const r = parseInt(hex.slice(1,3), 16);
+            const g = parseInt(hex.slice(3,5), 16);
+            const b = parseInt(hex.slice(5,7), 16);
+            return `${r}, ${g}, ${b}`;
+        }
+        
+        // Create wave colors based on theme ground colors
+        const createWaveColor = (baseColor, alpha) => {
+            const r = parseInt(baseColor.slice(1,3), 16);
+            const g = parseInt(baseColor.slice(3,5), 16);
+            const b = parseInt(baseColor.slice(5,7), 16);
+            return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+        };
+        
+        // Draw grass waves with theme-matched colors
+        const layers = [
+            // Use theme colors for waves, from lighter to darker
+            { 
+                amp: 15, 
+                freq: 0.02, 
+                offset: 50, 
+                color: createWaveColor(theme.ground[0], 0.3), 
+                width: 2 
+            },
+            { 
+                amp: 12, 
+                freq: 0.03, 
+                offset: 40, 
+                color: createWaveColor(theme.ground[0], 0.25), 
+                width: 2 
+            },
+            { 
+                amp: 10, 
+                freq: 0.02, 
+                offset: 30, 
+                color: createWaveColor(theme.ground[1], 0.3), 
+                width: 1.5 
+            },
+            { 
+                amp: 8, 
+                freq: 0.04, 
+                offset: 20, 
+                color: createWaveColor(theme.ground[1], 0.25), 
+                width: 1.5 
+            },
+            { 
+                amp: 5, 
+                freq: 0.03, 
+                offset: 10, 
+                color: createWaveColor(theme.ground[2], 0.3), 
+                width: 1 
+            }
+        ];
+        
+        // Draw wave layers
+        const drawWaveLayer = (amplitude, frequency, yOffset, color, width) => {
+            this.ctx.beginPath();
+            this.ctx.moveTo(0, this.canvas.height);
+            
+            // Draw waves from bottom up
+            for (let x = 0; x <= this.canvas.width; x += 2) {
+                const normalizedX = x / this.canvas.width;
+                const perspective = 1 - (yOffset / this.canvas.height); // Perspective scaling
+                const wave = Math.sin(x * frequency + this.time + yOffset) * amplitude * perspective;
+                const y = this.canvas.height - yOffset + wave;
+                
+                if (x === 0) {
+                    this.ctx.moveTo(x, y);
+                } else {
+                    this.ctx.lineTo(x, y);
+                }
+            }
+            
+            // Complete the path
+            this.ctx.lineTo(this.canvas.width, this.canvas.height);
+            this.ctx.lineTo(0, this.canvas.height);
+            
+            // Fill with theme-matched color
+            this.ctx.fillStyle = color;
+            this.ctx.lineWidth = width;
+            this.ctx.fill();
+        };
+        
+        // Draw all wave layers
+        layers.forEach(layer => {
+            drawWaveLayer(layer.amp, layer.freq, layer.offset, layer.color, layer.width);
+        });
+        
+        // Draw subtle perspective lines with theme-matched color
+        const numLines = 15;
+        const spacing = this.canvas.width / numLines;
+        
+        // Use the darkest ground color for perspective lines
+        this.ctx.strokeStyle = createWaveColor(theme.ground[2], 0.1);
+        this.ctx.lineWidth = 1;
+        
+        // Draw fewer, more subtle vertical lines
+        for (let x = 0; x <= this.canvas.width; x += spacing * 2) {
+            this.ctx.beginPath();
+            this.ctx.moveTo(x, this.groundVanishingPoint.y);
+            const endX = this.groundVanishingPoint.x + (x - this.groundVanishingPoint.x) * 2;
+            this.ctx.lineTo(endX, this.canvas.height);
+            this.ctx.stroke();
+        }
+        
+        this.ctx.restore();
+    }
+
+    // Add method to ask for player name
+    askPlayerName() {
+        let name = prompt('Enter your name:', 'Player');
+        name = (name || 'Player').trim().substring(0, 10); // Limit to 10 characters
+        localStorage.setItem('paperPlaneName', name);
+        return name;
+    }
+
+    drawCloud(cloud) {
+        this.ctx.save();
+        this.ctx.translate(cloud.x, cloud.y);
+        
+        // Set cloud color and opacity
+        this.ctx.fillStyle = `rgba(255, 255, 255, ${cloud.opacity})`;
+        
+        // Draw cloud shapes
+        const circles = [
+            { x: 0, y: 0, r: cloud.width * 0.2 },
+            { x: cloud.width * 0.2, y: 0, r: cloud.width * 0.3 },
+            { x: cloud.width * 0.4, y: cloud.width * 0.1, r: cloud.width * 0.2 },
+            { x: cloud.width * 0.2, y: cloud.width * 0.1, r: cloud.width * 0.25 },
+            { x: cloud.width * 0.5, y: -cloud.width * 0.05, r: cloud.width * 0.2 }
+        ];
+        
+        circles.forEach(circle => {
+            this.ctx.beginPath();
+            this.ctx.arc(circle.x, circle.y, circle.r, 0, Math.PI * 2);
+            this.ctx.fill();
+        });
+        
+        this.ctx.restore();
+    }
+} // Single closing brace for the Game class
 
 // Start the game when the page loads
 window.onload = () => {
