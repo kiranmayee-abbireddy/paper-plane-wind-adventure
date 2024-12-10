@@ -39,6 +39,45 @@ class Game {
         // Set up responsive canvas size
         this.setupCanvas();
         
+        // Initialize sound effects with reliable Mixkit URLs
+        this.sounds = {
+            crash: this.createSoundPool('https://assets.mixkit.co/active_storage/sfx/1018/1018-preview.mp3', 3),  // Heavy crash
+            gameOver: this.createSoundPool('https://assets.mixkit.co/active_storage/sfx/1435/1435-preview.mp3', 2),  // Current game over
+            levelComplete: this.createSoundPool('https://assets.mixkit.co/active_storage/sfx/2020/2020-preview.mp3', 2),  // Success sound
+            starCollect: this.createSoundPool('https://assets.mixkit.co/active_storage/sfx/1114/1114-preview.mp3', 3),  // Short coin/star collect
+            backgroundMusic: this.createBackgroundMusic('sounds/theme.mp3')  // Add background music
+        };
+
+        // Initialize background music
+        this.initBackgroundMusic();
+
+        // Sound state
+        this.soundEnabled = localStorage.getItem('paperPlaneSoundEnabled') !== 'false';
+        
+        // Set volume for all sound instances
+        Object.entries(this.sounds).forEach(([key, sound]) => {
+            if (Array.isArray(sound)) {  // Sound pool
+                sound.forEach(audio => {
+                    audio.volume = 0.5;
+                    audio.load();
+                });
+            } else {  // Single audio (background music)
+                sound.volume = 0.3;
+                sound.load();
+            }
+        });
+
+        // Add sound toggle button
+        this.soundButton = {
+            x: this.canvas.width - 50,  // Move it 50px from right edge
+            y: 50,  // Changed from 20 to 50 to move it lower
+            width: 30,
+            height: 30
+        };
+
+        // Add click handler for sound toggle
+        this.canvas.addEventListener('click', this.handleSoundToggle.bind(this));
+        
         this.ctx = this.canvas.getContext('2d');
         this.plane = {
             x: 100,
@@ -124,11 +163,6 @@ class Game {
             maxParticles: 100,
             trailLength: 5
         };
-        
-        // Add time tracking
-        this.levelTime = 0;
-        this.totalTime = 0;
-        this.timeLimit = null; // Will be set per level
         
         // Initialize first level
         this.initLevel(this.currentLevel);
@@ -347,7 +381,7 @@ class Game {
         // Update ground vanishing point
         this.groundVanishingPoint = {
             x: this.canvas.width / 2,
-            y: this.canvas.height * 3.25  // Changed from 0.65 to 0.8
+            y: this.canvas.height * 3.25
         };
         
         // Update cloud positions to fit new canvas size
@@ -357,6 +391,10 @@ class Game {
                 cloud.x = -cloud.width;
             }
         });
+        
+        // Update sound button position with new y-coordinate
+        this.soundButton.x = this.canvas.width - 50;
+        this.soundButton.y = 50;  // Added to maintain consistent y position
     }
 
     setupMobileControls() {
@@ -376,19 +414,19 @@ class Game {
             this.touchStartPos = pos;
             this.touchStartTime = Date.now();
             
-            // Add tap-to-boost functionality
+            // Reduce tap boost amount
             if (this.gameState === 'playing') {
                 const dx = pos.x - this.plane.x;
                 const dy = pos.y - this.plane.y;
                 const length = Math.sqrt(dx * dx + dy * dy);
                 
-                // Apply smaller boost on tap compared to click
-                this.plane.velocity.x += (dx / length) * 3;
-                this.plane.velocity.y += (dy / length) * 3;
+                // Reduced from 3 to 2
+                this.plane.velocity.x += (dx / length) * 2;
+                this.plane.velocity.y += (dy / length) * 2;
             }
         });
 
-        // Touch move handler
+        // Modified touch move handler
         this.canvas.addEventListener('touchmove', (e) => {
             e.preventDefault();
             if (this.touchStartPos && this.gameState === 'playing') {
@@ -399,13 +437,18 @@ class Game {
                 const dx = currentPos.x - this.touchStartPos.x;
                 const dy = currentPos.y - this.touchStartPos.y;
                 
-                // Make wind control more responsive on mobile
-                const sensitivity = 0.05; // Reduced from 0.02 for better mobile control
-                this.wind.x = dx * sensitivity;
-                this.wind.y = dy * sensitivity;
+                // Further reduced sensitivity and increased smoothing
+                const sensitivity = 0.008; // Reduced from 0.015
+                const targetWindX = dx * sensitivity;
+                const targetWindY = dy * sensitivity;
                 
-                // Add resistance to prevent extreme wind values
-                const maxWind = 2;
+                // Increased smoothing for more gradual changes
+                const smoothing = 0.08; // Reduced from 0.15 for even smoother transitions
+                this.wind.x += (targetWindX - this.wind.x) * smoothing;
+                this.wind.y += (targetWindY - this.wind.y) * smoothing;
+                
+                // Reduced max wind value for more controlled movement
+                const maxWind = 1.0; // Reduced from 1.5
                 this.wind.x = Math.max(-maxWind, Math.min(maxWind, this.wind.x));
                 this.wind.y = Math.max(-maxWind, Math.min(maxWind, this.wind.y));
             }
@@ -681,27 +724,6 @@ class Game {
 
         // Update wind effects
         this.updateWindEffects();
-
-        // Update level time
-        this.levelTime += 1/60; // Assuming 60 FPS
-        
-        // Check time limit
-        if (this.timeLimit && this.levelTime >= this.timeLimit) {
-            this.gameState = 'gameOver';
-            return;
-        }
-        
-        // Update oscillating wind zones
-        this.windZones.forEach(zone => {
-            if (zone.oscillating) {
-                const angle = this.time * zone.frequency;
-                zone.force.x = Math.cos(angle) * zone.force.x;
-                zone.force.y = Math.sin(angle) * zone.force.y;
-            }
-        });
-        
-        // Update wave animation
-        this.time += 0.02; // Adjust this value to change wave animation speed
     }
 
     startGame = () => {
@@ -719,6 +741,8 @@ class Game {
                 if (distance < 25) {
                     star.collected = true;
                     this.score.current += 100;
+                    // Play star collection sound
+                    this.playSound('starCollect');
                 }
             }
         });
@@ -763,45 +787,21 @@ class Game {
         this.ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
         this.ctx.fillRect(20, 20, this.canvas.width - 40, 40);
         
-        // Only draw time board if there's a time limit
-        if (this.timeLimit) {
-            this.ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
-            this.ctx.fillRect(20, 65, this.canvas.width - 40, 30);
-        }
-        
-        // Progress bar fill
-        const levelProgress = ((this.score.current - this.score.levelStart) / this.score.total) * 200;
-        this.ctx.fillStyle = 'gold';
-        this.ctx.fillRect(20, 20, levelProgress, 40);
-        
         // Score text
         this.ctx.font = 'bold 20px Arial';
         this.ctx.fillStyle = 'white';
         this.ctx.textAlign = 'left';
         this.ctx.fillText(`Score: ${this.score.display}`, 30, 47);
         
-        // Player name in center
+        // Player name and level in center
         this.ctx.textAlign = 'center';
-        this.ctx.fillText(this.playerName, this.canvas.width / 2, 47);
+        this.ctx.fillText(`${this.playerName} - Level ${this.currentLevel}`, this.canvas.width / 2, 47);
         
         // High score with holder name
         this.ctx.textAlign = 'right';
         const highScoreText = `Best: ${this.score.highest} (${this.highScoreHolder})`;
         this.ctx.fillStyle = this.score.current > this.score.highest ? '#FFD700' : 'white';
         this.ctx.fillText(highScoreText, this.canvas.width - 30, 47);
-        
-        // Only show time if there's a time limit
-        if (this.timeLimit) {
-            this.ctx.textAlign = 'center';
-            const remaining = Math.max(0, this.timeLimit - this.levelTime);
-            const remainingMinutes = Math.floor(remaining / 60);
-            const remainingSeconds = Math.floor(remaining % 60);
-            const remainingText = `${remainingMinutes}:${remainingSeconds.toString().padStart(2, '0')}`;
-            
-            // Change color to red if time is running low
-            this.ctx.fillStyle = remaining < 10 ? '#FF4444' : 'white';
-            this.ctx.fillText(`Time: ${remainingText}`, this.canvas.width / 2, 85);
-        }
     }
 
     drawWindIndicator() {
@@ -1267,11 +1267,12 @@ class Game {
         // Draw UI elements on top
         this.drawScore();
         this.drawWindIndicator();
-
+        this.drawSoundButton();
+        
         // Draw all overlays last
-        this.drawInstructions();  // Add this back
-        this.drawGameOver();      // Add this back
-        this.drawGameComplete();  // Add this back
+        this.drawInstructions();
+        this.drawGameOver();
+        this.drawGameComplete();
 
         // Draw level transition overlay if active
         if (this.levelTransitioning) {
@@ -1339,29 +1340,41 @@ class Game {
 
     initiateCrash() {
         if (!this.crash.active) {
+            // Play crash sound immediately
+            this.playSound('crash');
+            
+            // Stop background music
+            this.stopBackgroundMusic();
+            
+            // Set crash state after playing sound
             this.crash.active = true;
             this.crash.startTime = this.time;
-            this.gameState = 'gameOver';
             
-            // Update high score if current score is higher
-            if (this.score.current > this.score.highest) {
-                this.score.highest = this.score.current;
-                this.highScoreHolder = this.playerName;
-                localStorage.setItem('paperPlaneHighScore', this.score.highest);
-                localStorage.setItem('paperPlaneHighScoreHolder', this.highScoreHolder);
-            }
-            
-            // Create more particles for a better effect
+            // Create particles for crash effect
             for (let i = 0; i < 30; i++) {
                 this.crash.particles.push({
                     x: this.plane.x,
                     y: this.plane.y,
-                    vx: (Math.random() - 0.5) * 15,  // Increased spread
+                    vx: (Math.random() - 0.5) * 15,
                     vy: (Math.random() - 0.5) * 15,
-                    size: Math.random() * 8 + 3,     // Larger particles
+                    size: Math.random() * 8 + 3,
                     color: Math.random() > 0.5 ? 'white' : '#333'
                 });
             }
+
+            // Delay game over state and sound slightly
+            setTimeout(() => {
+                this.gameState = 'gameOver';
+                this.playSound('gameOver');
+                
+                // Update high score if current score is higher
+                if (this.score.current > this.score.highest) {
+                    this.score.highest = this.score.current;
+                    this.highScoreHolder = this.playerName;
+                    localStorage.setItem('paperPlaneHighScore', this.score.highest);
+                    localStorage.setItem('paperPlaneHighScoreHolder', this.highScoreHolder);
+                }
+            }, 100); // Short delay before game over
         }
     }
 
@@ -1418,7 +1431,6 @@ class Game {
         this.obstacles = levelConfig.obstacles;
         this.windZones = levelConfig.windZones;
         this.wind.strength = levelConfig.windStrength;
-        this.timeLimit = levelConfig.timeLimit;
         
         // Update score total for this level
         this.score.total = levelConfig.stars.length * 100;
@@ -1438,6 +1450,9 @@ class Game {
             
             // Store the current score as the level start score
             this.score.levelStart = this.score.current;
+            
+            // Play level complete sound
+            this.playSound('levelComplete');
             
             // First show "Level Complete"
             const showLevelComplete = () => {
@@ -1856,25 +1871,6 @@ class Game {
                this.plane.y <= zone.y + zone.height;
     }
 
-    drawTimer() {
-        if (this.timeLimit) {
-            const timeLeft = Math.max(0, this.timeLimit - this.levelTime);
-            const isLow = timeLeft < 10;
-            
-            // Draw timer background
-            this.ctx.fillStyle = isLow ? 'rgba(255, 0, 0, 0.3)' : 'rgba(0, 0, 0, 0.3)';
-            this.ctx.fillRect(this.canvas.width - 120, 20, 100, 30);
-            
-            // Draw timer text
-            this.ctx.font = 'bold 20px Arial';
-            this.ctx.fillStyle = isLow ? 'red' : 'white';
-            this.ctx.textAlign = 'right';
-            this.ctx.fillText(`Time: ${timeLeft.toFixed(1)}`, 
-                this.canvas.width - 30, 42
-            );
-        }
-    }
-
     drawGameComplete() {
         if (this.gameState === 'completed' && this.currentLevel === this.maxLevels) {
             // Overlay
@@ -1933,7 +1929,6 @@ class Game {
         // Base difficulty parameters that scale with level
         const difficulty = Math.min(1 + (levelNumber - 1) * 0.1, 3); // Caps at 3x difficulty
         const baseWindStrength = 0.5 * difficulty;
-        const timeLimit = Math.max(90 - levelNumber * 1.5, 30); // Decreases from 90s to 30s
         
         // Calculate number of obstacles based on level
         const numWindmills = Math.min(Math.floor(levelNumber / 3), 5);
@@ -1959,7 +1954,6 @@ class Game {
             stars,
             goal: goalPos,
             windStrength: baseWindStrength,
-            timeLimit: levelNumber > 5 ? timeLimit : null, // Only add time limit after level 5
             obstacles,
             windZones
         };
@@ -2111,7 +2105,7 @@ class Game {
     }
 
     restart() {
-        // Reset game state
+        // Reset existing game state
         this.currentLevel = 1;
         this.gameState = 'playing';
         this.score = {
@@ -2122,9 +2116,24 @@ class Game {
             highest: this.highScore
         };
         this.totalTime = 0;
-        this.levelTime = 0;
         this.crash.active = false;
         this.crash.particles = [];
+        
+        // Reset all sounds
+        Object.values(this.sounds).forEach(sound => {
+            if (Array.isArray(sound)) {  // Sound pool
+                sound.forEach(audio => {
+                    audio.pause();
+                    audio.currentTime = 0;
+                });
+            } else {  // Single audio (background music)
+                sound.pause();
+                sound.currentTime = 0;
+            }
+        });
+        
+        // Restart background music
+        this.startBackgroundMusic();
         
         // Initialize first level
         this.initLevel(1);
@@ -2336,9 +2345,192 @@ class Game {
         
         this.ctx.restore();
     }
+
+    // Add method to preload sounds
+    preloadSounds() {
+        // Preload all sound effects
+        Object.values(this.sounds).forEach(sound => {
+            if (Array.isArray(sound)) {  // Sound pool
+                sound.forEach(audio => {
+                    audio.load();
+                    audio.play().then(() => {
+                        audio.pause();
+                        audio.currentTime = 0;
+                    }).catch(() => {
+                        // Ignore autoplay errors
+                    });
+                });
+            } else {  // Background music
+                sound.load();
+            }
+        });
+    }
+
+    // Add sound toggle handler
+    handleSoundToggle(e) {
+        const rect = this.canvas.getBoundingClientRect();
+        const clickX = (e.clientX - rect.left) * (this.canvas.width / rect.width);
+        const clickY = (e.clientY - rect.top) * (this.canvas.height / rect.height);
+
+        if (clickX >= this.soundButton.x && 
+            clickX <= this.soundButton.x + this.soundButton.width &&
+            clickY >= this.soundButton.y && 
+            clickY <= this.soundButton.y + this.soundButton.height) {
+            this.soundEnabled = !this.soundEnabled;
+            localStorage.setItem('paperPlaneSoundEnabled', this.soundEnabled);
+        }
+    }
+
+    // Improved sound playing method
+    playSound(soundName) {
+        if (!this.soundEnabled || !this.sounds[soundName]) return;
+
+        // Find an available sound instance from the pool
+        const soundPool = this.sounds[soundName];
+        const availableSound = soundPool.find(sound => sound.paused || sound.ended);
+        
+        if (availableSound) {
+            availableSound.currentTime = 0;
+            
+            // Ensure volume is set correctly
+            availableSound.volume = 0.5;
+            
+            // Play sound with promise handling
+            const playPromise = availableSound.play();
+            
+            if (playPromise !== undefined) {
+                playPromise.catch(error => {
+                    console.log('Sound playback failed:', error);
+                });
+            }
+        }
+    }
+
+    // Add sound button drawing
+    drawSoundButton() {
+        this.ctx.save();
+        
+        // Draw button background
+        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+        this.ctx.fillRect(
+            this.soundButton.x,
+            this.soundButton.y,
+            this.soundButton.width,
+            this.soundButton.height
+        );
+
+        // Draw sound icon
+        this.ctx.beginPath();
+        this.ctx.fillStyle = 'white';
+        
+        if (this.soundEnabled) {
+            // Speaker icon
+            this.ctx.moveTo(this.soundButton.x + 8, this.soundButton.y + 10);
+            this.ctx.lineTo(this.soundButton.x + 13, this.soundButton.y + 10);
+            this.ctx.lineTo(this.soundButton.x + 18, this.soundButton.y + 5);
+            this.ctx.lineTo(this.soundButton.x + 18, this.soundButton.y + 25);
+            this.ctx.lineTo(this.soundButton.x + 13, this.soundButton.y + 20);
+            this.ctx.lineTo(this.soundButton.x + 8, this.soundButton.y + 20);
+            this.ctx.closePath();
+            this.ctx.fill();
+            
+            // Sound waves
+            this.ctx.beginPath();
+            this.ctx.arc(this.soundButton.x + 20, this.soundButton.y + 15, 5, -Math.PI/3, Math.PI/3);
+            this.ctx.stroke();
+            this.ctx.beginPath();
+            this.ctx.arc(this.soundButton.x + 20, this.soundButton.y + 15, 8, -Math.PI/3, Math.PI/3);
+            this.ctx.stroke();
+        } else {
+            // Muted speaker icon with X
+            this.ctx.moveTo(this.soundButton.x + 8, this.soundButton.y + 10);
+            this.ctx.lineTo(this.soundButton.x + 13, this.soundButton.y + 10);
+            this.ctx.lineTo(this.soundButton.x + 18, this.soundButton.y + 5);
+            this.ctx.lineTo(this.soundButton.x + 18, this.soundButton.y + 25);
+            this.ctx.lineTo(this.soundButton.x + 13, this.soundButton.y + 20);
+            this.ctx.lineTo(this.soundButton.x + 8, this.soundButton.y + 20);
+            this.ctx.closePath();
+            this.ctx.fill();
+            
+            // X
+            this.ctx.beginPath();
+            this.ctx.moveTo(this.soundButton.x + 20, this.soundButton.y + 10);
+            this.ctx.lineTo(this.soundButton.x + 25, this.soundButton.y + 20);
+            this.ctx.moveTo(this.soundButton.x + 25, this.soundButton.y + 10);
+            this.ctx.lineTo(this.soundButton.x + 20, this.soundButton.y + 20);
+            this.ctx.strokeStyle = 'white';
+            this.ctx.stroke();
+        }
+        
+        this.ctx.restore();
+    }
+
+    // Create a pool of audio instances for each sound
+    createSoundPool(url, size) {
+        return Array(size).fill(null).map(() => {
+            const audio = new Audio(url);
+            audio.preload = 'auto';
+            return audio;
+        });
+    }
+
+    // Initialize background music
+    initBackgroundMusic() {
+        const music = this.sounds.backgroundMusic;
+        
+        // Start playing when game starts
+        this.canvas.addEventListener('click', () => {
+            if (this.gameState === 'intro' && this.soundEnabled) {
+                music.play().catch(error => {
+                    console.log('Music playback failed:', error);
+                });
+            }
+        });
+
+        // Handle music when sound is toggled
+        const originalHandleSoundToggle = this.handleSoundToggle;
+        this.handleSoundToggle = (e) => {
+            originalHandleSoundToggle.call(this, e);
+            if (this.soundEnabled) {
+                music.play().catch(() => {});
+            } else {
+                music.pause();
+            }
+        };
+
+        // Add music controls to game state changes
+        this.startBackgroundMusic = () => {
+            if (this.soundEnabled) {
+                music.currentTime = 0;
+                music.play().catch(() => {});
+            }
+        };
+
+        this.stopBackgroundMusic = () => {
+            if (!this.soundEnabled) {  // Only stop if sound is disabled
+                music.pause();
+            }
+        };
+
+        // Modify visibility change handler to maintain music state
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden && this.soundEnabled && this.gameState === 'playing') {
+                // Only try to resume music if returning to tab and sound is enabled
+                music.play().catch(() => {});
+            }
+        });
+    }
+
+    createBackgroundMusic(url) {
+        const audio = new Audio(url);
+        audio.loop = true;  // Enable looping
+        audio.volume = 0.3; // Lower volume for background music
+        return audio;
+    }
 } // Single closing brace for the Game class
 
-// Start the game when the page loads
+// Modify window.onload to preload sounds
 window.onload = () => {
-    new Game();
+    const game = new Game();
+    game.preloadSounds();
 };
